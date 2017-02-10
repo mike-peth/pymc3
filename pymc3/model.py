@@ -413,10 +413,6 @@ class Model(six.with_metaclass(InitContextMeta, Context, Factor)):
         return self.bijection.map
 
     @property
-    def ndim(self):
-        return self.dict_to_array(self.test_point).shape[0]
-
-    @property
     @memoize
     def logp_array(self):
         return self.bijection.mapf(self.fastlogp)
@@ -652,7 +648,7 @@ class Model(six.with_metaclass(InitContextMeta, Context, Factor)):
         if point is None:
             point = self.test_point
 
-        for _ in range(n):
+        for i in range(n):
             f(**point)
 
         return f.profile
@@ -842,8 +838,8 @@ class ObservedRV(Factor, TensorVariable):
         super(TensorVariable, self).__init__(type, None, None, name)
 
         if distribution is not None:
-            data = as_tensor(data, name, model, distribution)
 
+            data = as_tensor(data, name, model, distribution)
             self.missing_values = data.missing_values
 
             self.logp_elemwiset = distribution.logp(data)

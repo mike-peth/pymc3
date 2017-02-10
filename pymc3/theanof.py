@@ -3,6 +3,7 @@ import numpy as np
 from .vartypes import typefilter, continuous_types
 from theano import theano, scalar, tensor as tt
 from theano.gof.graph import inputs
+from theano.tensor import TensorVariable
 from theano.gof import Op
 from theano.configparser import change_flags
 from .memoize import memoize
@@ -81,7 +82,7 @@ def gradient(f, vars=None):
 def jacobian1(f, v):
     """jacobian of f wrt v"""
     f = tt.flatten(f)
-    idx = tt.arange(f.shape[0], dtype='int32')
+    idx = tt.arange(f.shape[0])
 
     def grad_i(i):
         return gradient1(f[i], v)
@@ -106,8 +107,9 @@ def hessian(f, vars=None):
 
 
 def hessian_diag1(f, v):
+
     g = gradient1(f, v)
-    idx = tt.arange(g.shape[0], dtype='int32')
+    idx = tt.arange(g.shape[0])
 
     def hess_ii(i):
         return gradient1(g[i], v)[i]
@@ -143,10 +145,14 @@ class IdentityOp(scalar.UnaryScalarOp):
         return x
 
     def grad(self, inp, grads):
+        x, = inp
+        gz, = grads
         return grads
 
     def c_code(self, node, name, inp, out, sub):
-        return "{z} = {x};".format(x=inp[0], z=out[0])
+        x, = inp
+        z, = out
+        return """%(z)s = %(x)s;""" % locals()
 
     def __eq__(self, other):
         return type(self) == type(other)

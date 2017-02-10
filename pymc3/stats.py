@@ -5,12 +5,12 @@ import pandas as pd
 import itertools
 import sys
 import warnings
-from collections import namedtuple
 from .model import modelcontext
 
 from scipy.misc import logsumexp
 from scipy.stats.distributions import pareto
 
+import pymc3 as pm
 from .backends import tracetab as ttab
 
 __all__ = ['autocorr', 'autocov', 'dic', 'bpic', 'waic', 'loo', 'hpd', 'quantiles',
@@ -105,7 +105,7 @@ def log_post_trace(trace, model):
     return np.vstack([obs.logp_elemwise(pt) for obs in model.observed_RVs] for pt in trace)
 
 
-def waic(trace, model=None, pointwise=False):
+def waic(trace, model=None, n_eff=False, pointwise=False):
     """
     Calculate the widely available information criterion, its standard error
     and the effective number of parameters of the samples in trace from model.
@@ -118,6 +118,9 @@ def waic(trace, model=None, pointwise=False):
     trace : result of MCMC run
     model : PyMC Model
         Optional model. Default None, taken from context.
+    n_eff: bool
+        if True the effective number parameters will be returned.
+        Default False
     pointwise: bool
         if True the pointwise predictive accuracy will be returned.
         Default False
@@ -125,17 +128,15 @@ def waic(trace, model=None, pointwise=False):
 
     Returns
     -------
-    namedtuple with the following elements:
     waic: widely available information criterion
     waic_se: standard error of waic
-    p_waic: effective number parameters
-    waic_i: and array of the pointwise predictive accuracy, only if pointwise True
+    p_waic: effective number parameters, only if n_eff True
     """
     model = modelcontext(model)
 
     log_py = log_post_trace(trace, model)
 
-    lppd_i = logsumexp(log_py, axis=0, b=1.0 / log_py.shape[0])
+    lppd_i = logsumexp(log_py, axis = 0, b = 1.0 / log_py.shape[0])
 
     vars_lpd = np.var(log_py, axis=0)
     if np.any(vars_lpd > 0.4):
@@ -151,15 +152,16 @@ def waic(trace, model=None, pointwise=False):
 
     p_waic = np.sum(vars_lpd)
 
-    if pointwise:
-        WAIC_r = namedtuple('WAIC_r', 'WAIC, WAIC_se, p_WAIC, WAIC_i')
-        return WAIC_r(waic, waic_se, p_waic, waic_i)
+
+    if n_eff:
+        return waic, waic_se, p_waic
+    elif pointwise:
+        return waic, waic_se, waic_i, p_waic
     else:
-        WAIC_r = namedtuple('WAIC_r', 'WAIC, WAIC_se, p_WAIC')
-        return WAIC_r(waic, waic_se, p_waic)
+        return waic, waic_se
 
 
-def loo(trace, model=None, pointwise=False):
+def loo(trace, model=None, n_eff=False):
     """
     Calculates leave-one-out (LOO) cross-validation for out of sample predictive
     model fit, following Vehtari et al. (2015). Cross-validation is computed using
@@ -171,20 +173,17 @@ def loo(trace, model=None, pointwise=False):
     trace : result of MCMC run
     model : PyMC Model
         Optional model. Default None, taken from context.
-    pointwise: bool
-        if True the pointwise predictive accuracy will be returned.
+    n_eff: bool
+        if True the effective number parameters will be computed and returned.
         Default False
 
 
     Returns
     -------
-    namedtuple with the following elements:
-    loo: approximated Leave-one-out cross-validation
-    loo_se: standard error of loo
-    p_loo: effective number of parameters
-    loo_i: and array of the pointwise predictive accuracy, only if pointwise True
+    elpd_loo: log pointwise predictive density calculated via approximated LOO cross-validation
+    elpd_loo_se: standard error of waic elpd_loo
+    p_loo: effective number parameters, only if n_eff True
     """
-
     model = modelcontext(model)
 
     log_py = log_post_trace(trace, model)
@@ -223,27 +222,23 @@ def loo(trace, model=None, pointwise=False):
     r_sorted[q80:] = np.vstack(expvals).T
     # Unsort ratios (within columns) before using them as weights
     r_new = np.array([r[np.argsort(i)]
-                      for r, i in zip(r_sorted.T, np.argsort(r.T, axis=1))]).T
+                      for r, i in zip(r_sorted, np.argsort(r, axis=0))])
 
     # Truncate weights to guarantee finite variance
     w = np.minimum(r_new, r_new.mean(axis=0) * S**0.75)
 
-    loo_lppd_i = - 2. * logsumexp(log_py, axis=0, b=w / np.sum(w, axis=0))
+    loo_lppd_i = -2.0 * logsumexp(log_py, axis = 0, b = w / np.sum(w, axis = 0))
 
     loo_lppd_se = np.sqrt(len(loo_lppd_i) * np.var(loo_lppd_i))
 
     loo_lppd = np.sum(loo_lppd_i)
 
-    lppd = np.sum(logsumexp(log_py, axis=0, b=1. / log_py.shape[0]))
 
-    p_loo = lppd + (0.5 * loo_lppd)
-
-    if pointwise:
-        LOO_r = namedtuple('LOO_r', 'LOO, LOO_se, p_LOO, LOO_i')
-        return LOO_r(loo_lppd, loo_lppd_se, p_loo, loo_lppd_i)
+    if n_eff:
+        p_loo = np.sum(np.log(np.mean(py, axis=0))) - loo_lppd
+        return loo_lppd, loo_lppd_se, p_loo
     else:
-        LOO_r = namedtuple('LOO_r', 'LOO, LOO_se, p_LOO')
-        return LOO_r(loo_lppd, loo_lppd_se, p_loo)
+        return loo_lppd, loo_lppd_se
 
 
 def bpic(trace, model=None):
