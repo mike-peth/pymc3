@@ -4,10 +4,6 @@
 
 ### New features
 
-* Experimental GPU support.
-
-* Gaussian Process support.
-
 * `Model` can now be inherited from and act as a base class for user specified models (see pymc3.models.linear).
 
 * Add MvGaussianRandomWalk and MvStudentTRandomWalk distributions.
