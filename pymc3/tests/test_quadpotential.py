@@ -5,10 +5,13 @@ import theano.tensor as tt
 import theano
 
 from pymc3.step_methods.hmc import quadpotential
-import pymc3
 
-from nose.tools import raises
+from nose.tools import raises, assert_raises
 from nose.plugins.skip import SkipTest
+
+if quadpotential.chol_available:
+    from scipy import sparse
+    from sksparse import cholmod
 
 
 def require_sparse(f):
@@ -72,7 +75,7 @@ def test_equal_diag():
             quadpotential.quad_potential(np.diag(1. / diag), True, False),
         ]
         if quadpotential.chol_available:
-            diag_ = scipy.sparse.csc_matrix(np.diag(1. / diag))
+            diag_ = sparse.csc_matrix(np.diag(1. / diag))
             pots.append(quadpotential.quad_potential(diag_, True, False))
 
         v = np.diag(1. / diag).dot(x_)
@@ -121,7 +124,7 @@ def test_random_diag():
         quadpotential.quad_potential(np.diag(1./d), False, False),
     ]
     if quadpotential.chol_available:
-        d = scipy.sparse.csc_matrix(np.diag(d))
+        d_ = scipy.sparse.csc_matrix(np.diag(d))
         pot = quadpotential.quad_potential(d, True, False)
         pots.append(pot)
     for pot in pots:
@@ -148,23 +151,3 @@ def test_random_dense():
         for pot in pots:
             cov_ = np.cov(np.array([pot.random() for _ in range(1000)]).T)
             assert np.allclose(cov_, inv, atol=0.1)
-
-
-def test_user_potential():
-    model = pymc3.Model()
-    with model:
-        a = pymc3.Normal("a", mu=0, sd=1)
-
-    # Work around missing nonlocal in python2
-    called = []
-
-    class Potential(quadpotential.ElemWiseQuadPotential):
-        def energy(self, x):
-            called.append(1)
-            return super(Potential, self).energy(x)
-
-    pot = Potential([1])
-    with model:
-        step = pymc3.NUTS(potential=pot)
-        pymc3.sample(10, init=None, step=step)
-    assert called

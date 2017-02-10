@@ -10,7 +10,7 @@ def simple_model():
     mu = -2.1
     tau = 1.3
     with Model() as model:
-        Normal('x', mu, tau=tau, shape=2, testval=tt.ones(2) * .1)
+        Normal('x', mu, tau=tau, shape=2, testval=[.1] * 2)
 
     return model.test_point, model, (mu, tau ** -1)
 
@@ -30,7 +30,7 @@ def multidimensional_model():
     mu = -2.1
     tau = 1.3
     with Model() as model:
-        Normal('x', mu, tau=tau, shape=(3, 2), testval=.1 * tt.ones((3, 2)))
+        Normal('x', mu, tau=tau, shape=(3, 2), testval=.1 * np.ones((3, 2)))
 
     return model.test_point, model, (mu, tau ** -1)
 
@@ -43,7 +43,8 @@ def simple_arbitrary_det():
     with Model() as model:
         a = Normal('a')
         b = arbitrary_det(a)
-        Normal('obs', mu=b.astype('float64'), observed=np.array([1, 3, 5]))
+        c = Normal('obs', mu=b.astype('float64'),
+                   observed=np.array([1, 3, 5]))
 
     return model.test_point, model
 

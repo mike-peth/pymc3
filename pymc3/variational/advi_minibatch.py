@@ -42,7 +42,7 @@ def _get_rvss(
                      'When minibatch_RVs is given, local_RVs and ' +
                      'observed_RVs must be None.')
 
-        s = floatX(total_size / minibatch_tensors[0].shape[0])
+        s = floatX(total_size) / minibatch_tensors[0].shape[0]
         local_RVs = OrderedDict()
         observed_RVs = OrderedDict([(v, s) for v in minibatch_RVs])
 
@@ -154,7 +154,7 @@ def _elbo_t(
 
     # Sampling local variational parameters
     if uw_l is not None:
-        l_l = (uw_l.size / 2).astype('int32')
+        l_l = (uw_l.size / 2).astype('int64')
         u_l = uw_l[:l_l]
         w_l = uw_l[l_l:]
         ns_l = r.normal(size=(n_mcsamples, inarray_l.tag.test_value.shape[0]))
@@ -165,7 +165,7 @@ def _elbo_t(
 
     # Sampling global variational parameters
     if uw_g is not None:
-        l_g = (uw_g.size / 2).astype('int32')
+        l_g = (uw_g.size / 2).astype('int64')
         u_g = uw_g[:l_g]
         w_g = uw_g[l_g:]
         ns_g = r.normal(size=(n_mcsamples, inarray_g.tag.test_value.shape[0]))
@@ -447,7 +447,7 @@ def advi_minibatch(vars=None, start=None, model=None, n=5000, n_mcsamples=1,
         raise ValueError('Model can not include discrete RVs for ADVI.')
 
     _check_minibatches(minibatch_tensors, minibatches)
-
+    
     if encoder_params is None:
         encoder_params = []
 
@@ -523,8 +523,6 @@ def advi_minibatch(vars=None, start=None, model=None, n=5000, n_mcsamples=1,
     progress = tqdm.trange(n)
     for i in progress:
         e = f(*next(minibatches))
-        if np.isnan(e):
-            raise FloatingPointError('NaN occurred in ADVI optimization.')
         elbos[i] = e
         if n < 10:
             progress.set_description('ELBO = {:,.2f}'.format(elbos[i]))

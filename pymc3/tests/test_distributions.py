@@ -7,13 +7,12 @@ from ..model import Model, Point, Potential
 from ..blocking import DictToVarBijection, DictToArrayBijection, ArrayOrdering
 from ..distributions import (DensityDist, Categorical, Multinomial, VonMises, Dirichlet,
                              MvStudentT, MvNormal, ZeroInflatedPoisson,
-                             ZeroInflatedNegativeBinomial, Constant, Poisson, Bernoulli, Beta,
-                             BetaBinomial, HalfStudentT, StudentT, Weibull, Pareto,
-                             InverseGamma, Gamma, Cauchy, HalfCauchy, Lognormal, Laplace,
-                             NegativeBinomial, Geometric, Exponential, ExGaussian, Normal,
-                             Flat, LKJCorr, Wald, ChiSquared, HalfNormal, DiscreteUniform,
-                             Bound, Uniform, Triangular, Binomial, Wishart, SkewNormal,
-                             DiscreteWeibull)
+                             ZeroInflatedNegativeBinomial, ConstantDist, Constant, Poisson, Bernoulli, Beta,
+                             BetaBinomial, HalfStudentT, StudentT, Weibull, Pareto, InverseGamma,
+                             Gamma, Cauchy, HalfCauchy, Lognormal, Laplace, NegativeBinomial,
+                             Geometric, Exponential, ExGaussian, Normal, Flat, LKJCorr, Wald,
+                             ChiSquared, HalfNormal, DiscreteUniform, Bound, Uniform, Triangular,
+                             Binomial, Wishart, SkewNormal)
 from ..distributions import continuous, multivariate
 from numpy import array, inf, log, exp
 from numpy.testing import assert_almost_equal
@@ -209,10 +208,6 @@ def betafn(a):
 
 def logpow(v, p):
     return np.choose(v == 0, [p * np.log(v), 0])
-
-
-def discrete_weibull_logpmf(value, q, beta):
-    return np.log(np.power(q, np.power(value, beta)) - np.power(q, np.power(value + 1, beta)))
 
 
 def dirichlet_logpdf(value, a):
@@ -486,22 +481,18 @@ class TestMatchesScipy(SeededTest):
         self.pymc3_matches_scipy(Bernoulli, Bool, {'p': Unit},
                                  lambda value, p: sp.bernoulli.logpmf(value, p))
 
-    def test_discrete_weibull(self):
-        self.pymc3_matches_scipy(DiscreteWeibull, Nat,
-                {'q': Unit, 'beta': Rplusdunif}, discrete_weibull_logpmf)
-
     def test_poisson(self):
         self.pymc3_matches_scipy(Poisson, Nat, {'mu': Rplus},
                                  lambda value, mu: sp.poisson.logpmf(value, mu))
-
+                                 
     def test_bound_poisson(self):
         NonZeroPoisson = Bound(Poisson, lower=1.)
         self.pymc3_matches_scipy(NonZeroPoisson, PosNat, {'mu': Rplus},
                                 lambda value, mu: sp.poisson.logpmf(value, mu))
-
+        
         with Model(): x = NonZeroPoisson('x', mu=4)
         assert np.isinf(x.logp({'x':0}))
-
+        
     def test_constantdist(self):
         self.pymc3_matches_scipy(Constant, I, {'c': I},
                                  lambda value, c: np.log(c == value))
@@ -646,12 +637,6 @@ class TestMatchesScipy(SeededTest):
     def test_categorical(self):
         for n in [2, 3, 4]:
             yield self.check_categorical, n
-
-    def test_categorical_bounds(self):
-        with Model():
-            x = Categorical('x', p=np.array([0.2, 0.3, 0.5]))
-            assert np.isinf(x.logp({'x': -1}))
-            assert np.isinf(x.logp({'x': 3}))
 
     def check_categorical(self, n):
         self.pymc3_matches_scipy(Categorical, Domain(range(n), 'int64'), {'p': Simplex(n)},

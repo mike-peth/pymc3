@@ -192,13 +192,15 @@ class TestGLMLinear(SeededTest):
         self.y = true_intercept + self.x * true_slope + np.random.normal(scale=.5, size=size)
         data = dict(x=self.x, y=self.y)
         with pm.Model() as model:
-            pm.GLM.from_formula('y ~ x', data)
+            pm.glm.glm('y ~ x', data)
         return model
 
     def test_run(self):
         with self.build_model():
             start = pm.find_MAP(fmin=opt.fmin_powell)
-            pm.sample(50, pm.Slice(), start=start)
+            trace = pm.sample(50, pm.Slice(), start=start)
+
+        pm.glm.plot_posterior_predictive(trace)
 
 
 class TestLatentOccupancy(SeededTest):

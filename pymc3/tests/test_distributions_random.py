@@ -8,7 +8,7 @@ import numpy.random as nr
 
 import pymc3 as pm
 from .helpers import SeededTest
-from .test_distributions import (build_model, Domain, product, R, Rplus, Rplusbig, Rplusdunif, Unit, Nat,
+from .test_distributions import (build_model, Domain, product, R, Rplus, Rplusbig, Unit, Nat,
                                  NatSmall, I, Simplex, Vector, PdMatrix)
 
 
@@ -55,7 +55,7 @@ def pymc3_random_discrete(dist, paramdomains,
             if np.all(k[:, 0] == k[:, 1]):
                 p = 1.
             else:
-                _, p = st.chisquare(k[:, 0], k[:, 1])
+                _chi, p = st.chisquare(k[:, 0], k[:, 1])
             f -= 1
         assert p > alpha, str(pt)
 
@@ -299,11 +299,6 @@ class TestBernoulli(BaseTestCases.BaseTestCase):
     params = {'p': 0.5}
 
 
-class TestDiscreteWeibull(BaseTestCases.BaseTestCase):
-    distribution = pm.DiscreteWeibull
-    params = {'q': 0.25, 'beta': 2.}
-
-
 class TestPoisson(BaseTestCases.BaseTestCase):
     distribution = pm.Poisson
     params = {'mu': 1.}
@@ -489,15 +484,6 @@ class ScalarParameterSamples(SeededTest):
         def ref_rand(size, lower, upper):
             return st.randint.rvs(lower, upper, size=size)
         pymc3_random_discrete(pm.DiscreteUniform, {'lower': -NatSmall, 'upper': NatSmall},
-                              ref_rand=ref_rand)
-
-    def test_discrete_weibull(self):
-        def ref_rand(size, q, beta):
-            u = np.random.uniform(size=size)
-
-            return np.ceil(np.power(np.log(1 - u) / np.log(q), 1. / beta)) - 1
-        
-        pymc3_random_discrete(pm.DiscreteWeibull, {'q': Unit, 'beta': Rplusdunif},
                               ref_rand=ref_rand)
 
     def test_categorical(self):
