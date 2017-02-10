@@ -1,8 +1,5 @@
-from collections import namedtuple
-
 from ..arraystep import Competence
 from .base_hmc import BaseHMC
-from pymc3.theanof import floatX
 from pymc3.vartypes import continuous_types
 
 import numpy as np
@@ -11,12 +8,8 @@ import numpy.random as nr
 __all__ = ['NUTS']
 
 
-BinaryTree = namedtuple('BinaryTree',
-                        'q, p, q_grad, proposal, leaf_size, is_valid_sample, p_accept, n_proposals')
-
-
 def bern(p):
-    return nr.uniform() < p
+    return np.random.uniform() < p
 
 
 class NUTS(BaseHMC):
@@ -29,43 +22,23 @@ class NUTS(BaseHMC):
     The No-U-Turn Sampler: Adaptively Setting Path Lengths in Hamiltonian Monte Carlo.
     """
     default_blocked = True
-    generates_stats = True
-    stats_dtypes = [{
-        'depth': np.int64,
-        'step_size': np.float64,
-        'tune': np.bool,
-        'accept': np.float64,
-        'h_bar': np.float64,
-        'step_size_bar': np.float64,
-        'tree_size': np.float64,
-    }]
 
     def __init__(self, vars=None, Emax=1000, target_accept=0.8,
-                 gamma=0.05, k=0.75, t0=10, adapt_step_size=True, **kwargs):
+                 gamma=0.05, k=0.75, t0=10, **kwargs):
         """
         Parameters
         ----------
         vars : list of Theano variables, default continuous vars
         Emax : float, default 1000
-            Maximum energy change allowed during leapfrog steps. Larger
-            deviations will abort the integration.
+            maximum energy
         target_accept : float (0,1) default .8
             target for avg accept probability between final branch and initial position
-        step_scale : float, default 0.25
-            Size of steps to take, automatically scaled down by 1/n**(1/4).
-            If step size adaptation is switched off, the resulting step size
-            is used. If adaptation is enabled, it is used as initial guess.
         gamma : float, default .05
         k : float (.5,1) default .75
             scaling of speed of adaptation
         t0 : int, default 10
             slows inital adapatation
-        adapt_step_size : bool
-            Whether step size should be enabled. If this is disabled,
-            `k`, `t0`, `gamma` and `target_accept` are ignored.
         kwargs: passed to BaseHMC
-
-        The step size adaptation stops when `self.tune` is set to False.
         """
         super(NUTS, self).__init__(vars, use_single_leapfrog=True, **kwargs)
 
@@ -77,76 +50,49 @@ class NUTS(BaseHMC):
         self.t0 = t0
 
         self.h_bar = 0
-        self.mu = np.log(self.step_size * 10)
-        self.log_step_size = np.log(self.step_size)
-        self.log_step_size_bar = 0
+        self.u = np.log(self.step_size * 10)
         self.m = 1
-        self.adapt_step_size = adapt_step_size
-
-        self.tune = True
 
     def astep(self, q0):
         p0 = self.potential.random()
         start_energy = self.compute_energy(q0, p0)
 
-        if not self.adapt_step_size:
-            step_size = self.step_size
-        elif self.tune:
-            step_size = np.exp(self.log_step_size)
-        else:
-            step_size = np.exp(self.log_step_size_bar)
-
-        u = floatX(nr.uniform())
-
+        u = nr.uniform()
         q = qn = qp = q0
-        qn_grad = qp_grad = self.dlogp(q)
         pn = pp = p0
+
         tree_size, depth = 1., 0
         keep_sampling = True
 
         while keep_sampling:
             direction = bern(0.5) * 2 - 1
-            q_edge, p_edge, q_edge_grad = {-1: (qn, pn, qn_grad), 1: (qp, pp, qp_grad)}[direction]
+            q_edge, p_edge = {-1: (qn, pn), 1: (qp, pp)}[direction]
 
-            tree = buildtree(self.leapfrog, q_edge, p_edge, q_edge_grad, u, direction,
-                             depth, step_size, self.Emax, start_energy)
+            q_edge, p_edge, proposal, subtree_size, is_valid_sample, a, na = buildtree(
+                self.leapfrog, q_edge, p_edge,
+                u, direction, depth,
+                self.step_size, self.Emax, start_energy)
 
             if direction == -1:
-                qn, pn, qn_grad = tree.q, tree.p, tree.q_grad
+                qn, pn = q_edge, p_edge
             else:
-                qp, pp, qp_grad = tree.q, tree.p, tree.q_grad
+                qp, pp = q_edge, p_edge
 
-            if tree.is_valid_sample and bern(min(1, tree.leaf_size / tree_size)):
-                q = tree.proposal
+            if is_valid_sample and bern(min(1, subtree_size / tree_size)):
+                q = proposal
 
-            tree_size += tree.leaf_size
+            tree_size += subtree_size
 
             span = qp - qn
-            keep_sampling = tree.is_valid_sample and (span.dot(pn) >= 0) and (span.dot(pp) >= 0)
+            keep_sampling = is_valid_sample and (span.dot(pn) >= 0) and (span.dot(pp) >= 0)
             depth += 1
 
         w = 1. / (self.m + self.t0)
-        self.h_bar = ((1 - w) * self.h_bar +
-                      w * (self.target_accept - tree.p_accept * 1. / tree.n_proposals))
-
-        if self.tune:
-            self.log_step_size = self.mu - self.h_bar * np.sqrt(self.m) / self.gamma
-            mk = self.m ** -self.k
-            self.log_step_size_bar = mk * self.log_step_size + (1 - mk) * self.log_step_size_bar
-
+        self.h_bar = (1 - w) * self.h_bar + w * (self.target_accept - a * 1. / na)
+        self.step_size = np.exp(self.u - (self.m**self.k / self.gamma) * self.h_bar)
         self.m += 1
 
-        stats = {
-            'depth': depth,
-            'step_size': step_size,
-            'tune': self.tune,
-            'accept': tree.p_accept * 1. / tree.n_proposals,
-            'h_bar': self.h_bar,
-            'step_size_bar': np.exp(self.log_step_size_bar),
-            'tree_size': tree_size,
-        }
-
-        return q, [stats]
+        return q
 
     @staticmethod
     def competence(var):
@@ -155,35 +101,33 @@ class NUTS(BaseHMC):
         return Competence.INCOMPATIBLE
 
 
-def buildtree(leapfrog, q, p, q_grad, u, direction, depth, step_size, Emax, start_energy):
+def buildtree(leapfrog, q, p, u, direction, depth, step_size, Emax, start_energy):
     if depth == 0:
-        epsilon = floatX(np.asarray(direction * step_size))
-        q, p, q_grad, new_energy = leapfrog(q, p, q_grad, epsilon)
+        q_edge, p_edge, new_energy = leapfrog(q, p, np.array(direction * step_size))
         energy_change = new_energy - start_energy
+
         leaf_size = int(np.log(u) + energy_change <= 0)
         is_valid_sample = (np.log(u) + energy_change < Emax)
-        p_accept = min(1, np.exp(-energy_change))
-        return BinaryTree(q, p, q_grad, q, leaf_size, is_valid_sample, p_accept, 1)
+        return q_edge, p_edge, q_edge, leaf_size, is_valid_sample, min(1, np.exp(-energy_change)), 1
     else:
         depth -= 1
 
-    tree = buildtree(leapfrog, q, p, q_grad, u, direction, depth, step_size, Emax, start_energy)
+    q, p, proposal, tree_size, is_valid_sample, a1, na1 = buildtree(
+        leapfrog, q, p, u, direction, depth, step_size, Emax, start_energy)
 
-    if tree.is_valid_sample:
-        subtree = buildtree(leapfrog, tree.q, tree.p, tree.q_grad, u, direction, depth,
-                            step_size, Emax, start_energy)
-        if bern(subtree.leaf_size * 1. / max(subtree.leaf_size + tree.leaf_size, 1)):
-            proposal = subtree.proposal
-        else:
-            proposal = tree.proposal
-        leaf_size = subtree.leaf_size + tree.leaf_size
-        p_accept = subtree.p_accept + tree.p_accept
-        n_proposals = subtree.n_proposals + tree.n_proposals
-        span = direction * (subtree.q - tree.q)
-        is_valid_sample = (subtree.is_valid_sample and
-                           span.dot(subtree.p) >= 0 and
-                           span.dot(tree.p) >= 0)
-        q, p, q_grad = subtree.q, subtree.p, subtree.q_grad
-        return BinaryTree(q, p, q_grad, proposal, leaf_size, is_valid_sample, p_accept, n_proposals)
+    if is_valid_sample:
+        q_edge, p_edge, new_proposal, subtree_size, is_valid_subsample, a11, na11 = buildtree(
+            leapfrog, q, p, u, direction, depth, step_size, Emax, start_energy)
+
+        tree_size += subtree_size
+        if bern(subtree_size * 1. / max(tree_size, 1)):
+            proposal = new_proposal
+
+        a1 += a11
+        na1 += na11
+        span = direction * (q_edge - q)
+        is_valid_sample = is_valid_subsample and (span.dot(p_edge) >= 0) and (span.dot(p) >= 0)
     else:
-        return tree
+        q_edge, p_edge = q, p
+
+    return q_edge, p_edge, proposal, tree_size, is_valid_sample, a1, na1

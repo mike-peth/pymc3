@@ -4,8 +4,6 @@ import scipy.linalg
 from theano.tensor import slinalg
 from scipy.sparse import issparse
 
-from pymc3.theanof import floatX
-
 import numpy as np
 
 __all__ = ['quad_potential', 'ElemWiseQuadPotential', 'QuadPotential',
@@ -18,7 +16,7 @@ def quad_potential(C, is_cov, as_cov):
     ----------
     C : arraylike, 0 <= ndim <= 2
         scaling matrix for the potential
-        vector treated as diagonal matrix.
+        vector treated as diagonal matrix
     is_cov : Boolean
         whether C is provided as a covariance matrix or hessian
     as_cov : Boolean
@@ -29,6 +27,7 @@ def quad_potential(C, is_cov, as_cov):
     -------
     q : Quadpotential
     """
+
     if issparse(C):
         if not chol_available:
             raise ImportError("Sparse mass matrices require scikits.sparse")
@@ -80,7 +79,6 @@ def isquadpotential(o):
 class ElemWiseQuadPotential(object):
 
     def __init__(self, v):
-        v = floatX(v)
         s = v ** .5
 
         self.s = s
@@ -91,7 +89,7 @@ class ElemWiseQuadPotential(object):
         return self.v * x
 
     def random(self):
-        return floatX(normal(size=self.s.shape)) * self.inv_s
+        return normal(size=self.s.shape) * self.inv_s
 
     def energy(self, x):
         return .5 * x.dot(self.v * x)
@@ -100,7 +98,7 @@ class ElemWiseQuadPotential(object):
 class QuadPotential_Inv(object):
 
     def __init__(self, A):
-        self.L = floatX(scipy.linalg.cholesky(A, lower=True))
+        self.L = scipy.linalg.cholesky(A, lower=True)
 
     def velocity(self, x):
         solve = slinalg.Solve(lower=True)
@@ -108,7 +106,7 @@ class QuadPotential_Inv(object):
         return solve(self.L.T, y)
 
     def random(self):
-        n = floatX(normal(size=self.L.shape[0]))
+        n = normal(size=self.L.shape[0])
         return dot(self.L, n)
 
     def energy(self, x):
@@ -119,14 +117,14 @@ class QuadPotential_Inv(object):
 class QuadPotential(object):
 
     def __init__(self, A):
-        self.A = floatX(A)
+        self.A = A
         self.L = scipy.linalg.cholesky(A, lower=True)
 
     def velocity(self, x):
         return x.T.dot(self.A.T)
 
     def random(self):
-        n = floatX(normal(size=self.L.shape[0]))
+        n = normal(size=self.L.shape[0])
         return scipy.linalg.solve_triangular(self.L.T, n)
 
     def energy(self, x):
@@ -158,7 +156,7 @@ if chol_available:
             return theano.sparse.dot(A, x)
 
         def random(self):
-            n = floatX(normal(size=self.size))
+            n = normal(size=self.size)
             n /= self.d_sqrt
             n = self.factor.solve_Lt(n)
             n = self.factor.apply_Pt(n)

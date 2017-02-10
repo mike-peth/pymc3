@@ -5,7 +5,7 @@ Note that gradient based samplers will not work.
 """
 
 
-import pymc3 as pm
+from pymc3 import *
 import theano.tensor as tt
 from theano import as_op
 from numpy import arange, array, empty
@@ -35,34 +35,34 @@ def rateFunc(switchpoint, early_mean, late_mean):
     return out
 
 
-with pm.Model() as model:
+with Model() as model:
 
     # Prior for distribution of switchpoint location
-    switchpoint = pm.DiscreteUniform('switchpoint', lower=0, upper=years)
+    switchpoint = DiscreteUniform('switchpoint', lower=0, upper=years)
     # Priors for pre- and post-switch mean number of disasters
-    early_mean = pm.Exponential('early_mean', lam=1.)
-    late_mean = pm.Exponential('late_mean', lam=1.)
+    early_mean = Exponential('early_mean', lam=1.)
+    late_mean = Exponential('late_mean', lam=1.)
 
     # Allocate appropriate Poisson rates to years before and after current
     # switchpoint location
     idx = arange(years)
     # theano style:
-    # rate = switch(switchpoint >= idx, early_mean, late_mean)
+    #rate = switch(switchpoint >= idx, early_mean, late_mean)
     # non-theano style
     rate = rateFunc(switchpoint, early_mean, late_mean)
 
     # Data likelihood
-    disasters = pm.Poisson('disasters', rate, observed=disasters_data)
+    disasters = Poisson('disasters', rate, observed=disasters_data)
 
     # Initial values for stochastic nodes
     start = {'early_mean': 2., 'late_mean': 3.}
 
     # Use slice sampler for means
-    step1 = pm.Slice([early_mean, late_mean])
+    step1 = Slice([early_mean, late_mean])
     # Use Metropolis for switchpoint, since it accomodates discrete variables
-    step2 = pm.Metropolis([switchpoint])
+    step2 = Metropolis([switchpoint])
 
-    # njobs>1 works only with most recent (mid August 2014) Theano version:
+    # njobs>1 works only with most recent (mid August 2014) Thenao version:
     # https://github.com/Theano/Theano/pull/2021
-    tr = pm.sample(1000, tune=500, start=start, step=[step1, step2], njobs=1)
-    pm.traceplot(tr)
+    tr = sample(1000, tune=500, start=start, step=[step1, step2], njobs=1)
+    traceplot(tr)

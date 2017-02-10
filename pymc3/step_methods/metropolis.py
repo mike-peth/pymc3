@@ -5,7 +5,7 @@ import theano
 from ..distributions import draw_values
 from .arraystep import ArrayStepShared, ArrayStep, metrop_select, Competence
 import pymc3 as pm
-from pymc3.theanof import floatX
+
 
 __all__ = ['Metropolis', 'BinaryMetropolis', 'BinaryGibbsMetropolis',
            'CategoricalGibbsMetropolis', 'NormalProposal', 'CauchyProposal',
@@ -70,11 +70,6 @@ class Metropolis(ArrayStepShared):
         compilation mode passed to Theano functions
     """
     default_blocked = False
-    generates_stats = True
-    stats_dtypes = [{
-        'accept': np.float64,
-        'tune': np.bool,
-    }]
 
     def __init__(self, vars=None, S=None, proposal_dist=NormalProposal, scaling=1.,
                  tune=True, tune_interval=100, model=None, mode=None, **kwargs):
@@ -99,7 +94,7 @@ class Metropolis(ArrayStepShared):
             [[v.dtype in pm.discrete_types] * (v.dsize or 1) for v in vars])
         self.any_discrete = self.discrete.any()
         self.all_discrete = self.discrete.all()
-
+        
         self.mode = mode
 
         shared = pm.make_shared_replacements(vars, model)
@@ -127,22 +122,16 @@ class Metropolis(ArrayStepShared):
                     delta[self.discrete], 0).astype('int64')
                 q = (q0 + delta).astype('int64')
         else:
-            q = floatX(q0 + delta)
+            q = q0 + delta
 
-        accept = self.delta_logp(q, q0)
-        q_new = metrop_select(accept, q, q0)
+        q_new = metrop_select(self.delta_logp(q, q0), q, q0)
 
         if q_new is q:
             self.accepted += 1
 
         self.steps_until_tune -= 1
 
-        stats = {
-            'tune': self.tune,
-            'accept': np.exp(accept),
-        }
-
-        return q_new, [stats]
+        return q_new
 
     @staticmethod
     def competence(var):
@@ -207,12 +196,6 @@ class BinaryMetropolis(ArrayStep):
         Optional model for sampling step. Defaults to None (taken from context).
 
     """
-    generates_stats = True
-    stats_dtypes = [{
-        'accept': np.float64,
-        'tune': np.bool,
-        'p_jump': np.float64,
-    }]
 
     def __init__(self, vars, scaling=1., tune=True, tune_interval=100, model=None):
 
@@ -241,16 +224,9 @@ class BinaryMetropolis(ArrayStep):
         switch_locs = (rand_array < p_jump)
         q[switch_locs] = True - q[switch_locs]
 
-        accept = logp(q) - logp(q0)
-        q_new = metrop_select(accept, q, q0)
+        q_new = metrop_select(logp(q) - logp(q0), q, q0)
 
-        stats = {
-            'tune': self.tune,
-            'accept': np.exp(accept),
-            'p_jump': p_jump,
-        }
-
-        return q_new, [stats]
+        return q_new
 
     @staticmethod
     def competence(var):

@@ -6,7 +6,8 @@ import numpy as np
 from numpy.random import uniform
 from enum import IntEnum, unique
 
-__all__ = ['ArrayStep', 'ArrayStepShared', 'metrop_select', 'Competence']
+__all__ = ['ArrayStep', 'ArrayStepShared', 'metrop_select', 'SamplerHist',
+           'Competence']
 
 
 @unique
@@ -25,8 +26,6 @@ class Competence(IntEnum):
 
 
 class BlockedStep(object):
-
-    generates_stats = False
 
     def __new__(cls, *args, **kwargs):
         blocked = kwargs.get('blocked')
@@ -109,12 +108,8 @@ class ArrayStep(BlockedStep):
         if self.allvars:
             inputs.append(point)
 
-        if self.generates_stats:
-            apoint, stats = self.astep(bij.map(point), *inputs)
-            return bij.rmap(apoint), stats
-        else:
-            apoint = self.astep(bij.map(point), *inputs)
-            return bij.rmap(apoint)
+        apoint = self.astep(bij.map(point), *inputs)
+        return bij.rmap(apoint)
 
 
 class ArrayStepShared(BlockedStep):
@@ -144,12 +139,8 @@ class ArrayStepShared(BlockedStep):
 
         bij = DictToArrayBijection(self.ordering, point)
 
-        if self.generates_stats:
-            apoint, stats = self.astep(bij.map(point))
-            return bij.rmap(apoint), stats
-        else:
-            apoint = self.astep(bij.map(point))
-            return bij.rmap(apoint)
+        apoint = self.astep(bij.map(point))
+        return bij.rmap(apoint)
 
 
 def metrop_select(mr, q, q0):
@@ -173,3 +164,13 @@ def metrop_select(mr, q, q0):
         return q
     else:
         return q0
+
+
+class SamplerHist(object):
+
+    def __init__(self):
+        self.metrops = []
+
+    def acceptr(self):
+        return np.minimum(np.exp(self.metrops), 1)
+

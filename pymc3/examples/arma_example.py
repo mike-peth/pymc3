@@ -70,7 +70,7 @@ def build_model():
                       non_sequences=[mu, phi, theta])
 
         Potential('like', Normal.dist(0, sd=sigma).logp(err))
-        variational.advi(n=2000)
+        mu, sds, elbo = variational.advi(n=2000)
     return arma_model
 
 

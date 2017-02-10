@@ -21,6 +21,7 @@ Applied
    notebooks/probabilistic-matrix-factorization.ipynb
    notebooks/rugby_analytics.ipynb
    notebooks/survival_analysis.ipynb
+   notebooks/GP-smoothing.ipynb
    notebooks/dawid-skene.ipynb
 
 GLM
@@ -35,15 +36,6 @@ GLM
    notebooks/GLM-hierarchical.ipynb
    notebooks/GLM-poisson-regression.ipynb
    notebooks/hierarchical_partial_pooling.ipynb
-   notebooks/GLM-negative-binomial-regression.ipynb
-
-GP
-==
-
-.. toctree::
-   notebooks/GP-introduction.ipynb
-   notebooks/GP-covariances.ipynb
-   notebooks/GP-smoothing.ipynb
 
 Mixture Models
 ==============

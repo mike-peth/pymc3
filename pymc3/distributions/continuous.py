@@ -12,7 +12,6 @@ import theano.tensor as tt
 from scipy import stats
 import warnings
 
-from pymc3.theanof import floatX
 from . import transforms
 
 from .dist_math import bound, logpow, gammaln, betaln, std_cdf, i0, i1, alltrue_elemwise
@@ -100,7 +99,7 @@ def get_tau_sd(tau=None, sd=None):
     tau = 1. * tau
     sd = 1. * sd
 
-    return (floatX(tau), floatX(sd))
+    return (tau, sd)
 
 
 class Uniform(Continuous):
@@ -129,8 +128,8 @@ class Uniform(Continuous):
                  *args, **kwargs):
         super(Uniform, self).__init__(*args, **kwargs)
 
-        self.lower = lower = tt.as_tensor_variable(lower)
-        self.upper = upper = tt.as_tensor_variable(upper)
+        self.lower = lower
+        self.upper = upper
         self.mean = (upper + lower) / 2.
         self.median = self.mean
 
@@ -203,12 +202,30 @@ class Normal(Continuous):
         Precision (tau > 0).
     """
 
-    def __init__(self, mu=0, sd=None, tau=None, **kwargs):
-        tau, sd = get_tau_sd(tau=tau, sd=sd)
-        self.sd = tt.as_tensor_variable(sd)
-        self.tau = tt.as_tensor_variable(tau)
+    def __init__(self, *args, **kwargs):
+        # FIXME In order to catch the case where Normal('x', 0, .1) is
+        # called to display a warning we have to fetch the args and
+        # kwargs manually.  After a certain period we should revert
+        # back to the old calling signature.
 
-        self.mean = self.median = self.mode = self.mu = mu = tt.as_tensor_variable(mu)
+        if len(args) == 1:
+            mu = args[0]
+            sd = kwargs.pop('sd', None)
+            tau = kwargs.pop('tau', None)
+        elif len(args) == 2:
+            warnings.warn(('The order of positional arguments to Normal()'
+                           'has changed. The new signature is:'
+                           'Normal(name, mu, sd) instead of Normal(name, mu, tau).'),
+                          DeprecationWarning)
+            mu, sd = args
+            tau = kwargs.pop('tau', None)
+        else:
+            mu = kwargs.pop('mu', 0.)
+            sd = kwargs.pop('sd', None)
+            tau = kwargs.pop('tau', None)
+
+        self.mean = self.median = self.mode = self.mu = mu
+        self.tau, self.sd = get_tau_sd(tau=tau, sd=sd)
         self.variance = 1. / self.tau
 
         assert_negative_support(sd, 'sd', 'Normal')
@@ -217,8 +234,8 @@ class Normal(Continuous):
         super(Normal, self).__init__(**kwargs)
 
     def random(self, point=None, size=None, repeat=None):
-        mu, tau, _ = draw_values([self.mu, self.tau, self.sd],
-                                 point=point)
+        mu, tau, sd = draw_values([self.mu, self.tau, self.sd],
+                                  point=point)
         return generate_samples(stats.norm.rvs, loc=mu, scale=tau**-0.5,
                                 dist_shape=self.shape,
                                 size=size)
@@ -227,7 +244,6 @@ class Normal(Continuous):
         sd = self.sd
         tau = self.tau
         mu = self.mu
-
         return bound((-tau * (value - mu)**2 + tt.log(tau / np.pi / 2.)) / 2.,
                      sd > 0)
 
@@ -258,11 +274,7 @@ class HalfNormal(PositiveContinuous):
 
     def __init__(self, sd=None, tau=None, *args, **kwargs):
         super(HalfNormal, self).__init__(*args, **kwargs)
-        tau, sd = get_tau_sd(tau=tau, sd=sd)
-
-        self.sd = sd = tt.as_tensor_variable(sd)
-        self.tau = tau = tt.as_tensor_variable(tau)
-
+        self.tau, self.sd = get_tau_sd(tau=tau, sd=sd)
         self.mean = tt.sqrt(2 / (np.pi * self.tau))
         self.variance = (1. - 2 / np.pi) / self.tau
 
@@ -341,15 +353,11 @@ class Wald(PositiveContinuous):
 
     def __init__(self, mu=None, lam=None, phi=None, alpha=0., *args, **kwargs):
         super(Wald, self).__init__(*args, **kwargs)
-        mu, lam, phi = self.get_mu_lam_phi(mu, lam, phi)
-        self.alpha = alpha = tt.as_tensor_variable(alpha)
-        self.mu = mu = tt.as_tensor_variable(mu)
-        self.lam = lam = tt.as_tensor_variable(lam)
-        self.phi = phi =tt.as_tensor_variable(phi)
-
-        self.mean = self.mu + self.alpha
+        self.mu, self.lam, self.phi = self.get_mu_lam_phi(mu, lam, phi)
+        self.alpha = alpha
+        self.mean = self.mu + alpha
         self.mode = self.mu * (tt.sqrt(1. + (1.5 * self.mu / self.lam)**2)
-                               - 1.5 * self.mu / self.lam) + self.alpha
+                               - 1.5 * self.mu / self.lam) + alpha
         self.variance = (self.mu**3) / self.lam
 
         assert_negative_support(phi, 'phi', 'Wald')
@@ -452,12 +460,11 @@ class Beta(UnitContinuous):
         super(Beta, self).__init__(*args, **kwargs)
 
         alpha, beta = self.get_alpha_beta(alpha, beta, mu, sd)
-        self.alpha = alpha = tt.as_tensor_variable(alpha)
-        self.beta = beta = tt.as_tensor_variable(beta)
-
-        self.mean = self.alpha / (self.alpha + self.beta)
-        self.variance = self.alpha * self.beta / (
-            (self.alpha + self.beta)**2 * (self.alpha + self.beta + 1))
+        self.alpha = alpha
+        self.beta = beta
+        self.mean = alpha / (alpha + beta)
+        self.variance = alpha * beta / (
+            (alpha + beta)**2 * (alpha + beta + 1))
 
         assert_negative_support(alpha, 'alpha', 'Beta')
         assert_negative_support(beta, 'beta', 'Beta')
@@ -514,12 +521,12 @@ class Exponential(PositiveContinuous):
 
     def __init__(self, lam, *args, **kwargs):
         super(Exponential, self).__init__(*args, **kwargs)
-        self.lam = lam = tt.as_tensor_variable(lam)
-        self.mean = 1. / self.lam
+        self.lam = lam
+        self.mean = 1. / lam
         self.median = self.mean * tt.log(2)
         self.mode = 0
 
-        self.variance = self.lam**-2
+        self.variance = lam**-2
 
         assert_negative_support(lam, 'lam', 'Exponential')
 
@@ -559,10 +566,10 @@ class Laplace(Continuous):
 
     def __init__(self, mu, b, *args, **kwargs):
         super(Laplace, self).__init__(*args, **kwargs)
-        self.b = b = tt.as_tensor_variable(b)
-        self.mean = self.median = self.mode = self.mu = mu = tt.as_tensor_variable(mu)
+        self.b = b
+        self.mean = self.median = self.mode = self.mu = mu
 
-        self.variance = 2 * self.b**2
+        self.variance = 2 * b**2
 
         assert_negative_support(b, 'b', 'Laplace')
 
@@ -610,16 +617,14 @@ class Lognormal(PositiveContinuous):
 
     def __init__(self, mu=0, sd=None, tau=None, *args, **kwargs):
         super(Lognormal, self).__init__(*args, **kwargs)
-        tau, sd = get_tau_sd(tau=tau, sd=sd)
 
-        self.mu = mu = tt.as_tensor_variable(mu)
-        self.tau = tau = tt.as_tensor_variable(tau)
-        self.sd = sd = tt.as_tensor_variable(sd)
+        self.mu = mu
+        self.tau, self.sd = get_tau_sd(tau=tau, sd=sd)
 
-        self.mean = tt.exp(self.mu + 1. / (2 * self.tau))
-        self.median = tt.exp(self.mu)
-        self.mode = tt.exp(self.mu - 1. / self.tau)
-        self.variance = (tt.exp(1. / self.tau) - 1) * tt.exp(2 * self.mu + 1. / self.tau)
+        self.mean = tt.exp(mu + 1. / (2 * self.tau))
+        self.median = tt.exp(mu)
+        self.mode = tt.exp(mu - 1. / self.tau)
+        self.variance = (tt.exp(1. / self.tau) - 1) * tt.exp(2 * mu + 1. / self.tau)
 
         assert_negative_support(tau, 'tau', 'Lognormal')
         assert_negative_support(sd, 'sd', 'Lognormal')
@@ -675,10 +680,8 @@ class StudentT(Continuous):
     def __init__(self, nu, mu=0, lam=None, sd=None, *args, **kwargs):
         super(StudentT, self).__init__(*args, **kwargs)
         self.nu = nu = tt.as_tensor_variable(nu)
-        lam, sd = get_tau_sd(tau=lam, sd=sd)
-        self.lam = lam = tt.as_tensor_variable(lam)
-        self.sd = sd = tt.as_tensor_variable(sd)
-        self.mean = self.median = self.mode = self.mu = mu = tt.as_tensor_variable(mu)
+        self.lam, self.sd = get_tau_sd(tau=lam, sd=sd)
+        self.mean = self.median = self.mode = self.mu = mu
 
         self.variance = tt.switch((nu > 2) * 1,
                                   (1 / self.lam) * (nu / (nu - 2)),
@@ -735,9 +738,8 @@ class Pareto(PositiveContinuous):
 
     def __init__(self, alpha, m, *args, **kwargs):
         super(Pareto, self).__init__(*args, **kwargs)
-        self.alpha = alpha = tt.as_tensor_variable(alpha)
-        self.m = m = tt.as_tensor_variable(m)
-
+        self.alpha = alpha
+        self.m = m
         self.mean = tt.switch(tt.gt(alpha, 1), alpha *
                               m / (alpha - 1.), np.inf)
         self.median = m * 2.**(1. / alpha)
@@ -797,8 +799,8 @@ class Cauchy(Continuous):
 
     def __init__(self, alpha, beta, *args, **kwargs):
         super(Cauchy, self).__init__(*args, **kwargs)
-        self.median = self.mode = self.alpha = tt.as_tensor_variable(alpha)
-        self.beta = tt.as_tensor_variable(beta)
+        self.median = self.mode = self.alpha = alpha
+        self.beta = beta
 
         assert_negative_support(beta, 'beta', 'Cauchy')
 
@@ -844,9 +846,9 @@ class HalfCauchy(PositiveContinuous):
 
     def __init__(self, beta, *args, **kwargs):
         super(HalfCauchy, self).__init__(*args, **kwargs)
-        self.mode = tt.as_tensor_variable(0)
-        self.median = tt.as_tensor_variable(beta)
-        self.beta = tt.as_tensor_variable(beta)
+        self.mode = 0
+        self.median = beta
+        self.beta = beta
 
         assert_negative_support(beta, 'beta', 'HalfCauchy')
 
@@ -910,8 +912,8 @@ class Gamma(PositiveContinuous):
                  *args, **kwargs):
         super(Gamma, self).__init__(*args, **kwargs)
         alpha, beta = self.get_alpha_beta(alpha, beta, mu, sd)
-        self.alpha = alpha = tt.as_tensor_variable(alpha)
-        self.beta = beta = tt.as_tensor_variable(beta)
+        self.alpha = alpha
+        self.beta = beta
         self.mean = alpha / beta
         self.mode = tt.maximum((alpha - 1) / beta, 0)
         self.variance = alpha / beta**2
@@ -945,6 +947,7 @@ class Gamma(PositiveContinuous):
         return bound(
             -gammaln(alpha) + logpow(
                 beta, alpha) - beta * value + logpow(value, alpha - 1),
+
             value >= 0,
             alpha > 0,
             beta > 0)
@@ -977,9 +980,8 @@ class InverseGamma(PositiveContinuous):
 
     def __init__(self, alpha, beta=1, *args, **kwargs):
         super(InverseGamma, self).__init__(*args, **kwargs)
-        self.alpha = alpha = tt.as_tensor_variable(alpha)
-        self.beta = beta = tt.as_tensor_variable(beta)
-
+        self.alpha = alpha
+        self.beta = beta
         self.mean = self._calculate_mean()
         self.mode = beta / (alpha + 1.)
         self.variance = tt.switch(tt.gt(alpha, 2),
@@ -1032,7 +1034,7 @@ class ChiSquared(Gamma):
     """
 
     def __init__(self, nu, *args, **kwargs):
-        self.nu = nu = tt.as_tensor_variable(nu)
+        self.nu = nu
         super(ChiSquared, self).__init__(alpha=nu / 2., beta=0.5,
                                          *args, **kwargs)
 
@@ -1063,8 +1065,8 @@ class Weibull(PositiveContinuous):
 
     def __init__(self, alpha, beta, *args, **kwargs):
         super(Weibull, self).__init__(*args, **kwargs)
-        self.alpha = alpha = tt.as_tensor_variable(alpha)
-        self.beta = beta = tt.as_tensor_variable(beta)
+        self.alpha = alpha
+        self.beta = beta
         self.mean = beta * tt.exp(gammaln(1 + 1. / alpha))
         self.median = beta * tt.exp(gammaln(tt.log(2)))**(1. / alpha)
         self.variance = (beta**2) * \
@@ -1148,9 +1150,9 @@ class ExGaussian(Continuous):
 
     def __init__(self, mu, sigma, nu, *args, **kwargs):
         super(ExGaussian, self).__init__(*args, **kwargs)
-        self.mu = mu = tt.as_tensor_variable(mu)
-        self.sigma = sigma = tt.as_tensor_variable(sigma)
-        self.nu = nu = tt.as_tensor_variable(nu)
+        self.mu = mu
+        self.sigma = sigma
+        self.nu = nu
         self.mean = mu + nu
         self.variance = (sigma**2) + (nu**2)
 
@@ -1210,8 +1212,8 @@ class VonMises(Continuous):
     def __init__(self, mu=0.0, kappa=None, transform='circular',
                  *args, **kwargs):
         super(VonMises, self).__init__(*args, **kwargs)
-        self.mean = self.median = self.mode = self.mu = mu = tt.as_tensor_variable(mu)
-        self.kappa = kappa = tt.as_tensor_variable(kappa)
+        self.mean = self.median = self.mode = self.mu = mu
+        self.kappa = kappa
         self.variance = 1 - i1(kappa) / i0(kappa)
 
         if transform == 'circular':
@@ -1273,13 +1275,9 @@ class SkewNormal(Continuous):
     """
     def __init__(self, mu=0.0, sd=None, tau=None, alpha=1,  *args, **kwargs):
         super(SkewNormal, self).__init__(*args, **kwargs)
-        tau, sd = get_tau_sd(tau=tau, sd=sd)
-        self.mu = mu = tt.as_tensor_variable(mu)
-        self.tau = tt.as_tensor_variable(tau)
-        self.sd = tt.as_tensor_variable(sd)
-
-        self.alpha = alpha = tt.as_tensor_variable(alpha)
-
+        self.mu = mu
+        self.tau, self.sd = get_tau_sd(tau=tau, sd=sd)
+        self.alpha = alpha
         self.mean = mu + self.sd * (2 / np.pi)**0.5 * alpha / (1 + alpha**2)**0.5
         self.variance = self.sd**2 * (1 - (2 * alpha**2) / ((1 + alpha**2) * np.pi))
 
@@ -1287,7 +1285,7 @@ class SkewNormal(Continuous):
         assert_negative_support(sd, 'sd', 'SkewNormal')
 
     def random(self, point=None, size=None, repeat=None):
-        mu, tau, _, alpha = draw_values(
+        mu, tau, sd, alpha = draw_values(
             [self.mu, self.tau, self.sd, self.alpha], point=point)
         return generate_samples(stats.skewnorm.rvs,
                                 a=alpha, loc=mu, scale=tau**-0.5,
@@ -1347,3 +1345,4 @@ class Triangular(Continuous):
                          tt.switch(tt.eq(value, c), tt.log(2 / (upper - lower)),
                          tt.switch(alltrue_elemwise([c < value, value <= upper]),
                          tt.log(2 * (upper - value) / ((upper - lower) * (upper - c))),np.inf)))
+

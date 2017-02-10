@@ -1,13 +1,14 @@
 import theano.tensor as tt
+import pandas as pd
 import numpy as np
 from ..distributions import Normal, Flat
-from . import families
+from ..glm import families
 from ..model import Model, Deterministic
 from .utils import any_to_tensor_and_labels
 
 __all__ = [
     'LinearComponent',
-    'GLM'
+    'Glm'
 ]
 
 
@@ -86,7 +87,7 @@ class LinearComponent(Model):
                    priors=priors, vars=vars, name=name, model=model)
 
 
-class GLM(LinearComponent):
+class Glm(LinearComponent):
     """Creates glm model, y_est is accessible via attribute
     Parameters
     ----------
@@ -102,11 +103,11 @@ class GLM(LinearComponent):
             defaults to Normal.dist(mu=0, tau=1.0E-6)
     init : dict - test_vals for coefficients
     vars : dict - random variables instead of creating new ones
-    family : pymc3..families object
+    family : pymc3.glm.families object
     """
     def __init__(self, x, y, intercept=True, labels=None,
                  priors=None, vars=None, family='normal', name='', model=None):
-        super(GLM, self).__init__(
+        super(Glm, self).__init__(
             x, y, intercept=intercept, labels=labels,
             priors=priors, vars=vars, name=name, model=model
         )
@@ -115,8 +116,7 @@ class GLM(LinearComponent):
             normal=families.Normal,
             student=families.StudentT,
             binomial=families.Binomial,
-            poisson=families.Poisson,
-            negative_binomial=families.NegativeBinomial,
+            poisson=families.Poisson
         )
         if isinstance(family, str):
             family = _families[family]()

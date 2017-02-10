@@ -8,8 +8,7 @@ from __future__ import division
 import numpy as np
 import theano.tensor as tt
 
-from .special import gammaln
-
+from .special import gammaln, multigammaln
 
 def bound(logp, *conditions, **kwargs):
     """

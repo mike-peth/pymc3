@@ -2,19 +2,19 @@
 """A simple coin flipping example. Inspired by Stan's toy example. Copied and modified
 from Edward code base (https://github.com/blei-lab/edward).
 
-The model is written in PyMC3, and requires tensorflow and edward to run.
+The model is written in PyMC3.
 """
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import edward as ed  # pylint: disable=import-error
+import edward as ed
 import numpy as np
 import pymc3 as pm
 import theano
-import tensorflow as tf  # pylint: disable=import-error
+import tensorflow as tf
 
-from edward.models import Beta  # pylint: disable=import-error
+from edward.models import Beta
 from pymc3.external.edward import EdwardModel
 
 x_obs = theano.shared(np.zeros(1))
