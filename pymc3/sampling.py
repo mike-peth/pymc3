@@ -68,7 +68,7 @@ def assign_step_methods(model, step=None, methods=(NUTS, HamiltonianMC, Metropol
     selected_steps = defaultdict(list)
     for var in model.free_RVs:
         if var not in assigned_vars:
-            selected = max(methods, key=lambda method, var=var: method._competence(var))
+            selected = max(methods, key=lambda method: method._competence(var))
             pm._log.info('Assigned {0} to {1}'.format(selected.__name__, var))
             selected_steps[selected].append(var)
 
@@ -146,7 +146,7 @@ def sample(draws, step=None, init='advi', n_init=200000, start=None,
     MultiTrace object with access to sampling values
     """
     model = modelcontext(model)
-
+    
     if init is not None:
         init = init.lower()
 
@@ -189,15 +189,11 @@ def _sample(draws, step=None, start=None, trace=None, chain=0, tune=None,
     if progressbar:
         sampling = tqdm(sampling, total=draws)
     try:
-        strace = None
         for strace in sampling:
             pass
-        result = [] if strace is None else [strace]
-    except KeyboardInterrupt as exc:
-        if strace is not None:
-            strace.close()
-        raise exc
-    return MultiTrace(result)
+    except KeyboardInterrupt:
+        strace.close()
+    return MultiTrace([strace])
 
 
 def iter_sample(draws, step, start=None, trace=None, chain=0, tune=None,
@@ -271,22 +267,12 @@ def _iter_sample(draws, step, start=None, trace=None, chain=0, tune=None,
 
     point = Point(start, model=model)
 
-    if step.generates_stats and strace.supports_sampler_stats:
-        strace.setup(draws, chain, step.stats_dtypes)
-    else:
-        strace.setup(draws, chain)
+    strace.setup(draws, chain)
     for i in range(draws):
         if i == tune:
             step = stop_tuning(step)
-        if step.generates_stats:
-            point, states = step.step(point)
-            if strace.supports_sampler_stats:
-                strace.record(point, states)
-            else:
-                strace.record(point)
-        else:
-            point = step.step(point)
-            strace.record(point)
+        point = step.step(point)
+        strace.record(point)
         yield strace
     else:
         strace.close()
@@ -432,7 +418,7 @@ def init_nuts(init='ADVI', njobs=1, n_init=500000, model=None,
         * MAP : Use the MAP as starting point.
         * NUTS : Run NUTS and estimate posterior mean and covariance matrix.
     njobs : int
-        Number of parallel jobs to start.
+        Number of parallel jobs to start. 
     n_init : int
         Number of iterations of initializer
         If 'ADVI', number of iterations, if 'metropolis', number of draws.
@@ -455,21 +441,21 @@ def init_nuts(init='ADVI', njobs=1, n_init=500000, model=None,
     pm._log.info('Initializing NUTS using {}...'.format(init))
 
     random_seed = int(np.atleast_1d(random_seed)[0])
-
+    
     if init is not None:
         init = init.lower()
 
     if init == 'advi':
         v_params = pm.variational.advi(n=n_init, random_seed=random_seed)
         start = pm.variational.sample_vp(v_params, njobs, progressbar=False,
-                                         hide_transformed=False,
+                                         hide_transformed=False, 
                                          random_seed=random_seed)
         if njobs == 1:
             start = start[0]
         cov = np.power(model.dict_to_array(v_params.stds), 2)
     elif init == 'advi_map':
         start = pm.find_MAP()
-        v_params = pm.variational.advi(n=n_init, start=start,
+        v_params = pm.variational.advi(n=n_init, start=start, 
                                        random_seed=random_seed)
         cov = np.power(model.dict_to_array(v_params.stds), 2)
     elif init == 'map':
